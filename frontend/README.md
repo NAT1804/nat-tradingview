@@ -1,5 +1,64 @@
-# Vue 3 + TypeScript + Vite
+# NAT TradingView Frontend
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+A Vue 3 application with Vue Router and lightweight-charts for trading chart visualization.
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+## Features
+
+- **Chart View** (`/`) - Interactive trading chart with lightweight-charts
+- **Settings** (`/settings`) - Application settings and configuration
+- **Reusable Chart Component** - CommonChart component for consistent chart display
+
+## Routing
+
+The application uses Vue Router 4 with the following routes:
+
+- `/` - Chart View (default/root route)
+- `/settings` - Settings page
+
+## Chart Features
+
+- Interactive price charts with crosshair
+- Responsive design with customizable dimensions
+- Real-time data updates support
+- Professional trading chart styling
+- Built with lightweight-charts library
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+## Project Structure
+
+```
+src/
+├── components/
+│   ├── ChartView.vue      # Main chart view component
+│   ├── CommonChart.vue    # Reusable chart component
+│   ├── Navigator.vue      # Navigation component
+│   └── SettingsView.vue   # Settings component
+├── router/
+│   └── index.ts          # Vue Router configuration
+├── App.vue               # Main app component
+└── main.ts              # App entry point
+```
+
+## Technologies Used
+
+- Vue 3 with Composition API
+- Vue Router 4
+- TypeScript
+- Tailwind CSS
+- Vite
+- lightweight-charts

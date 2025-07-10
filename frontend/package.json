@@ -9,17 +9,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "lightweight-charts": "^5.0.7",
-    "pinia": "^3.0.3",
-    "socket.io-client": "^4.8.1",
-    "vue": "^3.5.13"
+    "@heroicons/vue": "^2.2.0",
+    "lightweight-charts": "^5.0.8",
+    "vue": "^3.5.17",
+    "vue-router": "^4.5.1"
   },
   "devDependencies": {
-    "@types/socket.io-client": "^1.4.36",
-    "@vitejs/plugin-vue": "^5.2.3",
+    "@tailwindcss/vite": "^4.1.10",
+    "@vitejs/plugin-vue": "^6.0.0",
     "@vue/tsconfig": "^0.7.0",
+    "tailwindcss": "^4.1.10",
     "typescript": "~5.8.3",
-    "vite": "^6.3.5",
-    "vue-tsc": "^2.2.8"
+    "vite": "^7.0.0",
+    "vue-tsc": "^2.2.10"
   }
 }
