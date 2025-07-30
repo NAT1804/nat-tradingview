@@ -11,13 +11,10 @@ const app = express();
 const server = http.createServer(app);
 
 const PORT = process.env.PORT || 3000;
-const NODE_ENV = process.env.NODE_ENV || "development";
-const CORS_ORIGIN =
-  process.env.CORS_ORIGIN || "http://localhost:5173,http://localhost:3000";
-const BINANCE_WS_URL =
-  process.env.BINANCE_WS_URL || "wss://stream.binance.com:9443/ws";
-const BINANCE_REST_URL =
-  process.env.BINANCE_REST_URL || "https://api.binance.com/api/v3";
+const NODE_ENV = process.env.NODE_ENV;
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "";
+const BINANCE_WS_URL = process.env.BINANCE_WS_URL;
+const BINANCE_REST_URL = process.env.BINANCE_REST_URL;
 const WS_HANDSHAKE_TIMEOUT = parseInt(
   process.env.WS_HANDSHAKE_TIMEOUT || "10000"
 );
