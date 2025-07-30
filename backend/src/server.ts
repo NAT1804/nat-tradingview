@@ -3,23 +3,56 @@ import http from "http";
 import { Server } from "socket.io";
 import WebSocket from "ws";
 import axios from "axios";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
 
-// Enable CORS and JSON parsing
+const PORT = process.env.PORT || 3000;
+const NODE_ENV = process.env.NODE_ENV || "development";
+const CORS_ORIGIN =
+  process.env.CORS_ORIGIN || "http://localhost:5173,http://localhost:3000";
+const BINANCE_WS_URL =
+  process.env.BINANCE_WS_URL || "wss://stream.binance.com:9443/ws";
+const BINANCE_REST_URL =
+  process.env.BINANCE_REST_URL || "https://api.binance.com/api/v3";
+const WS_HANDSHAKE_TIMEOUT = parseInt(
+  process.env.WS_HANDSHAKE_TIMEOUT || "10000"
+);
+const WS_RECONNECT_DELAY = parseInt(process.env.WS_RECONNECT_DELAY || "5000");
+const WS_MAX_RECONNECT_ATTEMPTS = parseInt(
+  process.env.WS_MAX_RECONNECT_ATTEMPTS || "5"
+);
+const LOG_LEVEL = process.env.LOG_LEVEL || "info";
+const ENABLE_DEBUG_LOGS = process.env.ENABLE_DEBUG_LOGS === "true";
+
+const io = new Server(server, {
+  cors: {
+    origin: CORS_ORIGIN.split(","),
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+  transports: ["websocket", "polling"],
+});
+
 app.use(express.json());
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Origin", CORS_ORIGIN.split(",")[0]);
+  res.header("Access-Control-Allow-Credentials", "true");
   res.header(
     "Access-Control-Allow-Headers",
     "Origin, X-Requested-With, Content-Type, Accept"
   );
-  next();
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  if (req.method === "OPTIONS") {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
 });
 
-// Historical data endpoint
 app.get("/api/historical", async (req, res) => {
   try {
     const {
@@ -28,7 +61,7 @@ app.get("/api/historical", async (req, res) => {
       limit = 1000, // Max 1000 candles
     } = req.query;
 
-    const response = await axios.get("https://api.binance.com/api/v3/klines", {
+    const response = await axios.get(`${BINANCE_REST_URL}/klines`, {
       params: {
         symbol: symbol.toString().toUpperCase(),
         interval: interval.toString(),
@@ -52,49 +85,219 @@ app.get("/api/historical", async (req, res) => {
   }
 });
 
-// WebSocket connection handling
 io.on("connection", (socket) => {
+  if (ENABLE_DEBUG_LOGS) {
+    console.log("Client connected:", socket.id);
+  }
   let binanceWS: WebSocket | null = null;
+  let reconnectTimer: NodeJS.Timeout | null = null;
+  let currentSymbol = "";
+  let currentInterval = "1m";
+  let isConnecting = false;
+  let reconnectAttempts = 0;
 
-  socket.on("subscribe", (symbol: string, interval = "1m") => {
-    // Close existing connection if any
-    if (binanceWS) {
-      binanceWS.close();
+  const connectToBinance = (symbol: string, interval: string) => {
+    if (isConnecting) {
+      if (ENABLE_DEBUG_LOGS) {
+        console.log("Already connecting to Binance, skipping...");
+      }
+      return;
     }
 
-    const url = `wss://stream.binance.com:9443/ws/${symbol}@kline_${interval}`;
-    binanceWS = new WebSocket(url);
+    isConnecting = true;
+    currentSymbol = symbol;
+    currentInterval = interval;
 
-    binanceWS.on("message", (msg) => {
-      const { k } = JSON.parse(msg.toString());
-      socket.emit("kline", {
-        time: k.t / 1000,
-        open: parseFloat(k.o),
-        high: parseFloat(k.h),
-        low: parseFloat(k.l),
-        close: parseFloat(k.c),
+    if (binanceWS) {
+      binanceWS.removeAllListeners();
+      binanceWS.close();
+      binanceWS = null;
+    }
+
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
+    const url = `${BINANCE_WS_URL}/${symbol}@kline_${interval}`;
+    if (ENABLE_DEBUG_LOGS) {
+      console.log(`Connecting to Binance WebSocket: ${url}`);
+    }
+
+    try {
+      binanceWS = new WebSocket(url, {
+        handshakeTimeout: WS_HANDSHAKE_TIMEOUT,
+        perMessageDeflate: false, // Disable compression for better performance
       });
-    });
 
-    binanceWS.on("error", (error) => {
-      console.error("WebSocket error:", error);
-      socket.emit("error", "WebSocket connection error");
-    });
+      binanceWS.on("open", () => {
+        if (ENABLE_DEBUG_LOGS) {
+          console.log(`Binance WebSocket connected for ${symbol}@${interval}`);
+        }
+        isConnecting = false;
+        reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+        socket.emit("connected", { symbol, interval });
+      });
+
+      binanceWS.on("message", (msg) => {
+        try {
+          const data = JSON.parse(msg.toString());
+          if (data.k) {
+            const { k } = data;
+            socket.emit("kline", {
+              time: k.t / 1000,
+              open: parseFloat(k.o),
+              high: parseFloat(k.h),
+              low: parseFloat(k.l),
+              close: parseFloat(k.c),
+              volume: parseFloat(k.v),
+            });
+          }
+        } catch (error) {
+          console.error("Error parsing Binance WebSocket message:", error);
+        }
+      });
+
+      binanceWS.on("error", (error) => {
+        console.error("Binance WebSocket error:", error);
+        isConnecting = false;
+        socket.emit("error", "Real-time data connection error");
+
+        // Attempt to reconnect after a delay
+        if (
+          currentSymbol &&
+          currentInterval &&
+          reconnectAttempts < WS_MAX_RECONNECT_ATTEMPTS
+        ) {
+          reconnectAttempts++;
+          reconnectTimer = setTimeout(() => {
+            if (ENABLE_DEBUG_LOGS) {
+              console.log(
+                `Attempting to reconnect to ${currentSymbol}@${currentInterval}... (Attempt ${reconnectAttempts}/${WS_MAX_RECONNECT_ATTEMPTS})`
+              );
+            }
+            connectToBinance(currentSymbol, currentInterval);
+          }, WS_RECONNECT_DELAY);
+        } else if (reconnectAttempts >= WS_MAX_RECONNECT_ATTEMPTS) {
+          console.error(
+            `Max reconnection attempts (${WS_MAX_RECONNECT_ATTEMPTS}) reached for ${currentSymbol}@${currentInterval}`
+          );
+          socket.emit("error", "Max reconnection attempts reached");
+        }
+      });
+
+      binanceWS.on("close", (code, reason) => {
+        if (ENABLE_DEBUG_LOGS) {
+          console.log(`Binance WebSocket closed: ${code} ${reason}`);
+        }
+        isConnecting = false;
+        binanceWS = null;
+
+        // Attempt to reconnect if this wasn't a manual close
+        if (
+          code !== 1000 &&
+          currentSymbol &&
+          currentInterval &&
+          reconnectAttempts < WS_MAX_RECONNECT_ATTEMPTS
+        ) {
+          reconnectAttempts++;
+          reconnectTimer = setTimeout(() => {
+            if (ENABLE_DEBUG_LOGS) {
+              console.log(
+                `Attempting to reconnect to ${currentSymbol}@${currentInterval}... (Attempt ${reconnectAttempts}/${WS_MAX_RECONNECT_ATTEMPTS})`
+              );
+            }
+            connectToBinance(currentSymbol, currentInterval);
+          }, WS_RECONNECT_DELAY);
+        } else if (reconnectAttempts >= WS_MAX_RECONNECT_ATTEMPTS) {
+          console.error(
+            `Max reconnection attempts (${WS_MAX_RECONNECT_ATTEMPTS}) reached for ${currentSymbol}@${currentInterval}`
+          );
+          socket.emit("error", "Max reconnection attempts reached");
+        }
+      });
+
+      binanceWS.on("ping", () => {
+        if (binanceWS && binanceWS.readyState === WebSocket.OPEN) {
+          binanceWS.pong();
+        }
+      });
+    } catch (error) {
+      console.error("Error creating Binance WebSocket:", error);
+      isConnecting = false;
+      socket.emit("error", "Failed to establish real-time data connection");
+    }
+  };
+
+  socket.on("subscribe", (symbol: string, interval = "1m") => {
+    if (ENABLE_DEBUG_LOGS) {
+      console.log(
+        `Subscribing to ${symbol} ${interval} for client ${socket.id}`
+      );
+    }
+
+    // Validate symbol format
+    const cleanSymbol = symbol.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (!cleanSymbol) {
+      socket.emit("error", "Invalid symbol format");
+      return;
+    }
+
+    reconnectAttempts = 0; // Reset reconnect attempts for new subscription
+    connectToBinance(cleanSymbol, interval);
   });
 
   socket.on("unsubscribe", () => {
+    if (ENABLE_DEBUG_LOGS) {
+      console.log(`Unsubscribing client ${socket.id}`);
+    }
+
+    // Clear reconnect timer
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
+    // Clear current subscription
+    currentSymbol = "";
+    currentInterval = "";
+    reconnectAttempts = 0;
+
     if (binanceWS) {
-      binanceWS.close();
+      binanceWS.removeAllListeners();
+      binanceWS.close(1000, "Client unsubscribed");
+      binanceWS = null;
+    }
+
+    socket.emit("unsubscribed");
+  });
+
+  socket.on("disconnect", (reason) => {
+    if (ENABLE_DEBUG_LOGS) {
+      console.log(`Client disconnected: ${socket.id}, reason: ${reason}`);
+    }
+
+    // Clear reconnect timer
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
+    if (binanceWS) {
+      binanceWS.removeAllListeners();
+      binanceWS.close(1000, "Client disconnected");
       binanceWS = null;
     }
   });
 
-  socket.on("disconnect", () => {
-    if (binanceWS) {
-      binanceWS.close();
-      binanceWS = null;
-    }
+  socket.on("error", (error) => {
+    console.error("Socket.IO error:", error);
   });
 });
 
-server.listen(3000, () => console.log("Backend running on :3000"));
+server.listen(PORT, () => {
+  console.log(`Backend running on port ${PORT} in ${NODE_ENV} mode`);
+  if (ENABLE_DEBUG_LOGS) {
+    console.log(`Debug logs enabled`);
+  }
+});

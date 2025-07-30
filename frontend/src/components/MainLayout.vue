@@ -10,6 +10,17 @@ const toggleLeftPanel = () => {
   isLeftPanelCollapsed.value = !isLeftPanelCollapsed.value;
   console.log(isLeftPanelCollapsed.value);
 };
+
+// Handle tool selection from LeftSidebar
+const handleToolSelected = (toolId: string, toolType: string) => {
+  console.log('Tool selected in MainLayout:', toolId, toolType);
+
+  // Emit the tool selection to parent components or handle it here
+  // This will be used to update the chart view
+  window.dispatchEvent(new CustomEvent('chartToolSelected', {
+    detail: { toolId, toolType }
+  }));
+};
 </script>
 
 <template>
@@ -19,8 +30,7 @@ const toggleLeftPanel = () => {
     </div>
 
     <div class="layout__left" :class="{ collapsed: isLeftPanelCollapsed }">
-      <LeftSidebar :isCollapsed="isLeftPanelCollapsed" @toggle="toggleLeftPanel" />
-
+      <LeftSidebar :isCollapsed="isLeftPanelCollapsed" @toggle="toggleLeftPanel" @toolSelected="handleToolSelected" />
     </div>
 
     <button @click="toggleLeftPanel" class="layout__left__toggle-btn" :class="{ collapsed: isLeftPanelCollapsed }"

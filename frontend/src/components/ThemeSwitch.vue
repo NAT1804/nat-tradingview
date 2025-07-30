@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { watch } from 'vue'
-import { useTheme } from '@/composables/useTheme'
-import SunIcon from '@/assets/icons/sun.svg'
-import MoonIcon from '@/assets/icons/moon.svg'
+import { useTheme } from '../composables/useTheme'
+import SunIcon from '../assets/icons/sun.svg'
+import MoonIcon from '../assets/icons/moon.svg'
 
 // Use the theme composable
 const { isDarkMode, toggleTheme } = useTheme()
@@ -13,7 +13,7 @@ interface Props {
   showLabel?: boolean
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   variant: 'default',
   showLabel: true
 })
