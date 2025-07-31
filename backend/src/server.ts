@@ -25,24 +25,44 @@ const WS_MAX_RECONNECT_ATTEMPTS = parseInt(
 const LOG_LEVEL = process.env.LOG_LEVEL || "info";
 const ENABLE_DEBUG_LOGS = process.env.ENABLE_DEBUG_LOGS === "true";
 
+// Parse CORS origins
+const corsOrigins = CORS_ORIGIN.split(",")
+  .map((origin) => origin.trim())
+  .filter((origin) => origin.length > 0);
+
 const io = new Server(server, {
   cors: {
-    origin: CORS_ORIGIN.split(","),
+    origin: corsOrigins.length > 0 ? corsOrigins : true,
     methods: ["GET", "POST"],
     credentials: true,
   },
   transports: ["websocket", "polling"],
 });
 
+// CORS middleware for Express app
 app.use(express.json());
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
+  const origin = req.headers.origin;
+
+  // Check if the origin is allowed
+  if (origin && corsOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  } else if (NODE_ENV === "development") {
+    // In development, allow all origins
+    res.header("Access-Control-Allow-Origin", "*");
+  } else if (corsOrigins.length === 0) {
+    // If no CORS origins specified, allow all (fallback)
+    res.header("Access-Control-Allow-Origin", "*");
+  }
+
   res.header("Access-Control-Allow-Credentials", "true");
   res.header(
     "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept"
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
   );
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+
+  // Handle preflight requests
   if (req.method === "OPTIONS") {
     res.sendStatus(200);
   } else {
@@ -294,6 +314,7 @@ io.on("connection", (socket) => {
 
 server.listen(PORT, () => {
   console.log(`Backend running on port ${PORT} in ${NODE_ENV} mode`);
+  console.log(`CORS origins: ${corsOrigins.join(", ")}`);
   if (ENABLE_DEBUG_LOGS) {
     console.log(`Debug logs enabled`);
   }
